@@ -1,26 +1,8 @@
-# Python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.Python
-venv/
-env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Data
-*.db
-*.sqlite3
-*.log
-
-# Docker
 .env
+*.env.local
+.DS_Store
+docker-compose.override.yml
+venv/
+.venv/
