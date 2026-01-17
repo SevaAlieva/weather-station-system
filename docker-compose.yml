@@ -3,72 +3,30 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: weather-postgres
     environment:
-      POSTGRES_DB: weather_db
-      POSTGRES_USER: weather_user
-      POSTGRES_PASSWORD: weather_pass
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: >
+      postgres
+      -c listen_addresses='*'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U weather_user -d weather_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - weather-network
-
-  generator:
-    build: ./generator
-    container_name: weather-generator
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      POSTGRES_DB: weather_db
-      POSTGRES_USER: weather_user
-      POSTGRES_PASSWORD: weather_pass
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-    networks:
-      - weather-network
-    restart: unless-stopped
-
-  redash:
-    image: redash/redash:10.1.0
-    container_name: weather-redash
-    ports:
-      - "5000:5000"
-    environment:
-      REDASH_DATABASE_URL: "postgresql://weather_user:weather_pass@postgres:5432/weather_db"
-      REDASH_REDIS_URL: "redis://redis:6379/0"
-      REDASH_COOKIE_SECRET: "very-secret-key-change-this"
-      REDASH_SECRET_KEY: "very-secret-key-change-this"
-      REDASH_LOG_LEVEL: "INFO"
-      REDASH_MAIL_DEFAULT_SENDER: "weather@example.com"
-      REDASH_MAIL_SERVER: "smtp.example.com"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks:
-      - weather-network
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    container_name: weather-redis
-    networks:
-      - weather-network
+    volumes:
+      - redis_data:/data
     restart: unless-stopped
 
 volumes:
   postgres_data:
-
-networks:
-  weather-network:
-    driver: bridge
+  redis_data:
