@@ -27,6 +27,67 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
+  redash:
+    image: redash/redash:8.0.0.b32245
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "5000:5000"
+    environment:
+      REDASH_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDASH_REDIS_URL: redis://redis:6379/0
+      REDASH_COOKIE_SECRET: ${REDASH_COOKIE_SECRET}
+      REDASH_SECRET_KEY: ${REDASH_SECRET_KEY}
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - redash_data:/app
+    command: >
+      bash -c "
+      echo 'Ожидание PostgreSQL...' &&
+      sleep 20 &&
+      echo 'Инициализация Redash...' &&
+      /app/bin/docker-entrypoint create_db &&
+      echo 'Запуск сервера...' &&
+      /app/bin/docker-entrypoint server
+      "
+    restart: unless-stopped
+
+  redash-worker:
+    image: redash/redash:8.0.0.b32245
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      REDASH_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDASH_REDIS_URL: redis://redis:6379/0
+      REDASH_COOKIE_SECRET: ${REDASH_COOKIE_SECRET}
+      REDASH_SECRET_KEY: ${REDASH_SECRET_KEY}
+      PYTHONUNBUFFERED: 1
+      QUEUES: queries,scheduled_queries,celery
+      WORKERS_COUNT: 2
+    command: worker
+    restart: unless-stopped
+
+  data-generator:
+    build:
+      context: ./generator
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_PORT: 5432
+    restart: unless-stopped
+
+
 volumes:
   postgres_data:
   redis_data:
+  redash_data:
