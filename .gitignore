@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
+.env.redash
+*.env
 .env
 *.env.local
 .DS_Store

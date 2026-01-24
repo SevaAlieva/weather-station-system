@@ -1,93 +1,84 @@
-version: '3.8'
+#код с официального compose.yaml от Redash с гита, но для проекта добавлен мой генератор
+x-redash-service: &redash-service
+  image: redash/redash:latest # здесь было __TAG__, как я поняла, он заменяется скриптом setup.sh, но на винде я его не запущу, поэтому
+                              #использую последнюю версию, а из самого файла взяла основную конфигурацию
+  depends_on:
+    - redash-postgres
+    - redis
+  env_file: .env.redash
+  restart: always
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
+  server:
+    <<: *redash-service
+    command: server
     ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    command: >
-      postgres
-      -c listen_addresses='*'
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+      - "5000:5000"
+
+  scheduler:
+    <<: *redash-service
+    command: scheduler
+
+  scheduled_worker:
+    <<: *redash-service
+    command: worker
+    environment:
+      QUEUES: "scheduled_queries,schemas"
+      WORKERS_COUNT: 1
+
+  adhoc_worker:
+    <<: *redash-service
+    command: worker
+    environment:
+      QUEUES: "queries"
+      WORKERS_COUNT: 2
 
   redis:
     image: redis:7-alpine
-    volumes:
-      - redis_data:/data
     restart: unless-stopped
 
-  redash:
-    image: redash/redash:8.0.0.b32245
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
+  redash-postgres:
+    image: pgautoupgrade/pgautoupgrade:17-alpine
+    env_file: .env.redash
+    volumes:
+      - redash_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  nginx:
+    image: redash/nginx:latest
     ports:
-      - "5000:5000"
-    environment:
-      REDASH_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDASH_REDIS_URL: redis://redis:6379/0
-      REDASH_COOKIE_SECRET: ${REDASH_COOKIE_SECRET}
-      REDASH_SECRET_KEY: ${REDASH_SECRET_KEY}
-      PYTHONUNBUFFERED: 1
-    volumes:
-      - redash_data:/app
-    command: >
-      bash -c "
-      echo 'Ожидание PostgreSQL...' &&
-      sleep 20 &&
-      echo 'Инициализация Redash...' &&
-      /app/bin/docker-entrypoint create_db &&
-      echo 'Запуск сервера...' &&
-      /app/bin/docker-entrypoint server
-      "
-    restart: unless-stopped
-
-  redash-worker:
-    image: redash/redash:8.0.0.b32245
+      - "80:80"
     depends_on:
-      - postgres
-      - redis
-    environment:
-      REDASH_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDASH_REDIS_URL: redis://redis:6379/0
-      REDASH_COOKIE_SECRET: ${REDASH_COOKIE_SECRET}
-      REDASH_SECRET_KEY: ${REDASH_SECRET_KEY}
-      PYTHONUNBUFFERED: 1
-      QUEUES: queries,scheduled_queries,celery
-      WORKERS_COUNT: 2
+      - server
+
+  worker:
+    <<: *redash-service
     command: worker
-    restart: unless-stopped
+    environment:
+      QUEUES: "periodic,emails,default"
+      WORKERS_COUNT: 1
+
+  weather-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: weather_db
+      POSTGRES_USER: weather_user
+      POSTGRES_PASSWORD: weather_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - weather_postgres_data:/var/lib/postgresql/data
 
   data-generator:
-    build:
-      context: ./generator
-      dockerfile: Dockerfile
+    build: ./generator
     depends_on:
-      postgres:
-        condition: service_healthy
+      - weather-postgres
     environment:
-      DB_HOST: postgres
-      DB_NAME: ${POSTGRES_DB}
-      DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      DB_PORT: 5432
-    restart: unless-stopped
-
+      DB_HOST: weather-postgres
+      POSTGRES_DB: weather_db
+      POSTGRES_USER: weather_user
+      POSTGRES_PASSWORD: weather_pass
 
 volumes:
-  postgres_data:
-  redis_data:
-  redash_data:
+  redash_postgres_data:
+  weather_postgres_data:
